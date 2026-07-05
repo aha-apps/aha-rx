@@ -1,0 +1,165 @@
+<!-- module.html — Estad\u00edsticas -->
+<div x-data="estadisticasData()" x-init="init()" class="module-enter">
+  <h2 class="text-2xl font-bold mb-4 flex items-center gap-2">
+    <i class="bi bi-bar-chart-line"></i> Estad\u00edsticas
+  </h2>
+
+  <!-- KPI Cards -->
+  <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+    <div class="stat bg-base-100 border border-base-300 rounded-xl p-4 shadow-sm">
+      <div class="stat-figure text-primary">
+        <i class="bi bi-people text-3xl"></i>
+      </div>
+      <div class="stat-title text-xs">Total Pacientes</div>
+      <div class="stat-value text-3xl text-primary" x-text="totalPacientes">0</div>
+    </div>
+    <div class="stat bg-base-100 border border-base-300 rounded-xl p-4 shadow-sm">
+      <div class="stat-figure text-secondary">
+        <i class="bi bi-capsule text-3xl"></i>
+      </div>
+      <div class="stat-title text-xs">Medicamentos</div>
+      <div class="stat-value text-3xl text-secondary" x-text="totalMedicamentos">0</div>
+    </div>
+    <div class="stat bg-base-100 border border-base-300 rounded-xl p-4 shadow-sm">
+      <div class="stat-figure text-accent">
+        <i class="bi bi-file-earmark-text text-3xl"></i>
+      </div>
+      <div class="stat-title text-xs">Total Recetas</div>
+      <div class="stat-value text-3xl text-accent" x-text="totalRecetas">0</div>
+    </div>
+    <div class="stat bg-base-100 border border-base-300 rounded-xl p-4 shadow-sm">
+      <div class="stat-figure text-info">
+        <i class="bi bi-calendar-check text-3xl"></i>
+      </div>
+      <div class="stat-title text-xs">Recetas Hoy</div>
+      <div class="stat-value text-3xl text-info" x-text="recetasHoy">0</div>
+    </div>
+  </div>
+
+  <!-- Chart Section -->
+  <div class="card bg-base-100 border border-base-300 shadow-sm mb-6">
+    <div class="card-body">
+      <h3 class="card-title text-lg flex items-center gap-2">
+        <i class="bi bi-bar-chart-fill"></i> Diagn\u00f3sticos m\u00e1s frecuentes
+      </h3>
+      <div class="w-full" style="height: 300px;">
+        <canvas id="chart-diagnosticos"></canvas>
+      </div>
+      <div x-show="!diagnosticos.length" class="text-center py-8 text-base-content/40">
+        <i class="bi bi-bar-chart text-4xl"></i>
+        <p class="mt-2">Crea recetas para ver estad\u00edsticas de diagn\u00f3sticos</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Actions -->
+  <div class="flex flex-wrap gap-3">
+    <button class="btn btn-outline" @click="exportCSV()">
+      <i class="bi bi-download"></i> Exportar CSV
+    </button>
+    <button class="btn btn-ghost" @click="recargar()">
+      <i class="bi bi-arrow-clockwise"></i> Actualizar
+    </button>
+  </div>
+
+  <!-- Loading skeleton -->
+  <template x-if="cargando">
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div class="skeleton h-28"></div>
+      <div class="skeleton h-28"></div>
+      <div class="skeleton h-28"></div>
+      <div class="skeleton h-28"></div>
+    </div>
+  </template>
+</div>
+
+<script>
+  function estadisticasData() {
+    var mod = window.MODULES['estadisticas'];
+    return {
+      totalPacientes: 0,
+      totalMedicamentos: 0,
+      totalRecetas: 0,
+      recetasHoy: 0,
+      diagnosticos: [],
+      cargando: true,
+
+      init: function () {
+        var self = this;
+        this.cargando = true;
+
+        var hoy = new Date();
+        hoy.setHours(0, 0, 0, 0);
+
+        Promise.all([
+          db.pacientes.count(),
+          db.medicamentos.count(),
+          db.recetas.count(),
+          db.recetas.toArray()
+        ]).then(function (results) {
+          self.totalPacientes = results[0];
+          self.totalMedicamentos = results[1];
+          self.totalRecetas = results[2];
+          var todasRecetas = results[3];
+
+          // Recetas de hoy
+          var hoyStr = hoy.toISOString();
+          self.recetasHoy = 0;
+          for (var i = 0; i < todasRecetas.length; i++) {
+            var r = todasRecetas[i];
+            if (r.createdAt) {
+              var rDate = new Date(r.createdAt);
+              if (rDate >= hoy) {
+                self.recetasHoy++;
+              }
+            }
+          }
+
+          // Diagn\u00f3sticos frecuentes
+          var diagCount = {};
+          for (var j = 0; j < todasRecetas.length; j++) {
+            var diag = todasRecetas[j].diagnostico;
+            if (diag) {
+              if (typeof diag === 'string' && diag.indexOf('U2FsdGVkX1') === 0) {
+                diag = cryptoHelpers.decrypt(diag) || diag;
+              }
+              if (diag) {
+                diagCount[diag] = (diagCount[diag] || 0) + 1;
+              }
+            }
+          }
+
+          var sorted = [];
+          for (var key in diagCount) {
+            if (diagCount.hasOwnProperty(key)) {
+              sorted.push({ label: key, count: diagCount[key] });
+            }
+          }
+          sorted.sort(function (a, b) { return b.count - a.count; });
+          self.diagnosticos = sorted.slice(0, 10);
+
+          mod.totalPacientes = self.totalPacientes;
+          mod.totalMedicamentos = self.totalMedicamentos;
+          mod.totalRecetas = self.totalRecetas;
+          mod.recetasHoy = self.recetasHoy;
+          mod.diagnosticosFrecuentes = sorted.slice(0, 10);
+
+          self.cargando = false;
+
+          // Renderizar gr\u00e1fica despu\u00e9s de que Alpine termine
+          setTimeout(function () {
+            mod.renderChart();
+          }, 200);
+        });
+      },
+
+      exportCSV: function () {
+        mod.exportCSV();
+      },
+
+      recargar: function () {
+        this.init();
+      }
+    };
+  }
+</script>

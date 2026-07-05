@@ -1,0 +1,249 @@
+<!-- module.html — Historial cl\u00ednico -->
+<div x-data="historialData()" x-init="init()" class="module-enter">
+  <h2 class="text-2xl font-bold mb-4 flex items-center gap-2">
+    <i class="bi bi-clock-history"></i> Historial de Recetas
+  </h2>
+
+  <!-- Toolbar -->
+  <div class="flex flex-wrap gap-2 mb-4">
+    <input type="search" x-model="busqueda" placeholder="Buscar por paciente, diagn\u00f3stico o medicamento..."
+           class="input input-bordered flex-1 min-w-[200px]" />
+    <select x-model="filtroPaciente" class="select select-bordered" @change="filtrarPorPaciente()">
+      <option value="">Todos los pacientes</option>
+      <template x-for="p in pacientes" :key="p.id">
+        <option :value="p.id" x-text="p.nombre"></option>
+      </template>
+    </select>
+  </div>
+
+  <!-- Timeline / Lista -->
+  <template x-if="items.length">
+    <div class="space-y-4">
+      <template x-for="item in filtered" :key="item.id">
+        <div class="card bg-base-100 border border-base-300 shadow-sm hover:shadow-md transition-shadow">
+          <div class="card-body p-4">
+            <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+              <div class="flex-1">
+                <!-- Header: paciente + fecha -->
+                <div class="flex items-center gap-2 mb-2">
+                  <div class="badge badge-lg badge-outline gap-1">
+                    <i class="bi bi-person"></i>
+                    <span x-text="getNombrePaciente(item.pacienteId)"></span>
+                  </div>
+                  <span class="text-sm text-base-content/50" x-text="UI.formatDate(item.createdAt)"></span>
+                </div>
+
+                <!-- Diagn\u00f3stico -->
+                <div class="mb-2">
+                  <span class="text-xs font-semibold text-base-content/40 uppercase">Diagn\u00f3stico</span>
+                  <p x-text="descifrarDiag(item.diagnostico)" class="font-medium"></p>
+                </div>
+
+                <!-- Medicamentos recetados -->
+                <div x-show="item._items && item._items.length">
+                  <span class="text-xs font-semibold text-base-content/40 uppercase">Medicamentos</span>
+                  <div class="flex flex-wrap gap-1 mt-1">
+                    <template x-for="it in item._items" :key="it.id">
+                      <span class="badge badge-ghost badge-sm gap-1">
+                        <i class="bi bi-capsule"></i>
+                        <span x-text="getNombreMedicamento(it.medicamentoId)"></span>
+                        <template x-if="it.dosis">
+                          <span x-text="' - ' + it.dosis"></span>
+                        </template>
+                        <template x-if="it.frecuencia">
+                          <span x-text="', c/' + it.frecuencia"></span>
+                        </template>
+                        <template x-if="it.duracion">
+                          <span x-text="', x' + it.duracion"></span>
+                        </template>
+                      </span>
+                    </template>
+                  </div>
+                </div>
+
+                <!-- Indicaciones y pr\u00f3xima cita -->
+                <div x-show="item.indicaciones" class="mt-2 text-sm text-base-content/70">
+                  <i class="bi bi-info-circle"></i>
+                  <span x-text="item.indicaciones"></span>
+                </div>
+                <div x-show="item.proximaCita" class="mt-1 text-sm">
+                  <span class="badge badge-info badge-sm gap-1">
+                    <i class="bi bi-calendar-check"></i>
+                    Pr\u00f3x. cita: <span x-text="UI.formatDate(item.proximaCita)"></span>
+                  </span>
+                </div>
+              </div>
+
+              <!-- Acciones -->
+              <div class="flex sm:flex-col gap-1 shrink-0">
+                <button class="btn btn-sm btn-ghost text-primary" @click="reimprimirPDF(item)" title="Reimprimir PDF">
+                  <i class="bi bi-file-earmark-pdf"></i>
+                  <span class="hidden sm:inline">PDF</span>
+                </button>
+                <button class="btn btn-sm btn-ghost text-error" @click="eliminar(item)" title="Eliminar">
+                  <i class="bi bi-trash"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- Contador -->
+      <div class="text-center text-sm text-base-content/40">
+        <span x-text="filtered.length"></span> receta(s) encontrada(s)
+      </div>
+    </div>
+  </template>
+
+  <!-- Vac\u00edo -->
+  <template x-if="!items.length && !cargando">
+    <div class="flex flex-col items-center justify-center py-16 text-base-content/50">
+      <i class="bi bi-clock-history text-6xl mb-4"></i>
+      <p class="text-lg mb-4">No hay recetas en el historial</p>
+      <a href="#recetas" class="btn btn-primary">
+        <i class="bi bi-plus-lg"></i> Crear primera receta
+      </a>
+    </div>
+  </template>
+
+  <!-- Loading skeleton -->
+  <template x-if="cargando">
+    <div class="space-y-4">
+      <div class="skeleton h-24 w-full"></div>
+      <div class="skeleton h-24 w-full"></div>
+      <div class="skeleton h-24 w-full"></div>
+    </div>
+  </template>
+</div>
+
+<script>
+  function historialData() {
+    var mod = window.MODULES['historial'];
+    return {
+      items: [],
+      busqueda: '',
+      filtroPaciente: '',
+      cargando: true,
+      pacientes: [],
+
+      get filtered() {
+        var self = this;
+        var result = this.items;
+        if (this.filtroPaciente) {
+          result = result.filter(function (r) { return r.pacienteId === self.filtroPaciente; });
+        }
+        if (!this.busqueda) return result;
+        var q = this.busqueda.toLowerCase();
+        return result.filter(function (r) {
+          var diagRaw = r.diagnostico || '';
+          var diag = diagRaw;
+          if (diagRaw.indexOf('U2FsdGVkX1') === 0) {
+            diag = cryptoHelpers.decrypt(diagRaw) || diagRaw;
+          }
+          var p = self.pacientes.find(function (p) { return p.id === r.pacienteId; });
+          var pName = p ? p.nombre.toLowerCase() : '';
+          var medText = '';
+          if (r._items) {
+            r._items.forEach(function (it) {
+              if (it._medName) medText += it._medName.toLowerCase() + ' ';
+            });
+          }
+          return diag.toLowerCase().indexOf(q) !== -1 ||
+                 pName.indexOf(q) !== -1 ||
+                 medText.indexOf(q) !== -1;
+        });
+      },
+
+      init: function () {
+        var self = this;
+        this.cargando = true;
+
+        Promise.all([
+          db.recetas.orderBy('createdAt').reverse().toArray(),
+          db.pacientes.orderBy('nombre').toArray()
+        ]).then(function (results) {
+          var recetas = results[0];
+          self.pacientes = results[1];
+          mod.pacientes = results[1];
+
+          // Cargar items y nombres de medicamentos
+          var promesas = recetas.map(function (r) {
+            return db.recetas_items.where('recetaId').equals(r.id).toArray().then(function (items) {
+              var medPromises = items.map(function (it) {
+                return db.medicamentos.get(it.medicamentoId).then(function (med) {
+                  if (med) it._medName = med.nombre + ' ' + med.presentacion;
+                });
+              });
+              return Promise.all(medPromises).then(function () {
+                r._items = items;
+              });
+            });
+          });
+
+          return Promise.all(promesas).then(function () {
+            self.items = recetas;
+            mod.items = recetas;
+            self.cargando = false;
+          });
+        });
+
+        mod.cargarDatos = function (pacienteId) {
+          var query = db.recetas.orderBy('createdAt').reverse();
+          if (pacienteId) query = db.recetas.where('pacienteId').equals(pacienteId).reverse();
+          query.toArray().then(function (data) {
+            var promesas = data.map(function (r) {
+              return db.recetas_items.where('recetaId').equals(r.id).toArray().then(function (items) {
+                var medPromises = items.map(function (it) {
+                  return db.medicamentos.get(it.medicamentoId).then(function (med) {
+                    if (med) it._medName = med.nombre + ' ' + med.presentacion;
+                  });
+                });
+                return Promise.all(medPromises).then(function () {
+                  r._items = items;
+                });
+              });
+            });
+            return Promise.all(promesas).then(function () {
+              self.items = data;
+              mod.items = data;
+            });
+          });
+        };
+
+        mod.cargarCatalogos = function () {
+          db.pacientes.orderBy('nombre').toArray().then(function (data) {
+            self.pacientes = data;
+            mod.pacientes = data;
+          });
+        };
+      },
+
+      getNombrePaciente: function (id) {
+        return mod.getNombrePaciente(id);
+      },
+
+      getNombreMedicamento: function (id) {
+        return mod.getNombreMedicamento(id);
+      },
+
+      descifrarDiag: function (diag) {
+        if (!diag) return '---';
+        var d = cryptoHelpers.decrypt(diag);
+        return d || diag;
+      },
+
+      filtrarPorPaciente: function () {
+        // El filtrado se hace en filtered
+      },
+
+      reimprimirPDF: function (item) {
+        mod.reimprimirPDF(item);
+      },
+
+      eliminar: function (item) {
+        mod.eliminar(item);
+      }
+    };
+  }
+</script>

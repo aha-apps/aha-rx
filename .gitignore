@@ -1,0 +1,7 @@
+# AHA Rx
+node_modules/
+dist/
+*.zip
+*.ateje-backup
+.DS_Store
+Thumbs.db

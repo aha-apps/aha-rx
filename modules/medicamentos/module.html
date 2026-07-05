@@ -1,0 +1,124 @@
+<!-- module.html — Medicamentos -->
+<div x-data="medicamentosData()" x-init="init()" class="module-enter">
+  <h2 class="text-2xl font-bold mb-4 flex items-center gap-2">
+    <i class="bi bi-capsule"></i> Medicamentos
+  </h2>
+
+  <!-- Toolbar -->
+  <div class="flex flex-wrap gap-2 mb-4">
+    <button class="btn btn-primary" @click="abrirForm()">
+      <i class="bi bi-plus-lg"></i> Agregar
+    </button>
+    <input type="search" x-model="busqueda" placeholder="Buscar medicamento..."
+           class="input input-bordered flex-1 min-w-[200px]" />
+    <button class="btn btn-ghost" @click="SeedData.sembrar()">
+      <i class="bi bi-database"></i> Cargar cat\u00e1logo
+    </button>
+  </div>
+
+  <!-- Lista -->
+  <template x-if="items.length">
+    <div class="overflow-x-auto">
+      <table class="table table-zebra">
+        <thead>
+          <tr>
+            <th>Nombre</th>
+            <th class="hidden sm:table-cell">Presentaci\u00f3n</th>
+            <th class="hidden md:table-cell">Laboratorio</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="item in filtered" :key="item.id">
+            <tr>
+              <td>
+                <div class="font-medium" x-text="item.nombre"></div>
+              </td>
+              <td class="hidden sm:table-cell" x-text="item.presentacion"></td>
+              <td class="hidden md:table-cell" x-text="item.laboratorio"></td>
+              <td>
+                <div class="flex gap-1">
+                  <button class="btn btn-sm btn-ghost" @click="abrirForm(item)" title="Editar">
+                    <i class="bi bi-pencil"></i>
+                  </button>
+                  <button class="btn btn-sm btn-ghost text-error" @click="eliminar(item)" title="Eliminar">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                </div>
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+  </template>
+
+  <!-- Vac\u00edo -->
+  <template x-if="!items.length && !cargando">
+    <div class="flex flex-col items-center justify-center py-16 text-base-content/50">
+      <i class="bi bi-capsule text-6xl mb-4"></i>
+      <p class="text-lg mb-4">No hay medicamentos en el cat\u00e1logo</p>
+      <div class="flex gap-2">
+        <button class="btn btn-primary" @click="abrirForm()">
+          <i class="bi bi-plus-lg"></i> Agregar primero
+        </button>
+        <button class="btn btn-outline" @click="SeedData.sembrar()">
+          <i class="bi bi-database"></i> Cargar cat\u00e1logo de ejemplo
+        </button>
+      </div>
+    </div>
+  </template>
+
+  <!-- Loading skeleton -->
+  <template x-if="cargando">
+    <div class="space-y-3">
+      <div class="skeleton h-12 w-full"></div>
+      <div class="skeleton h-12 w-full"></div>
+      <div class="skeleton h-12 w-full"></div>
+    </div>
+  </template>
+</div>
+
+<script>
+  function medicamentosData() {
+    var mod = window.MODULES['medicamentos'];
+    return {
+      items: [],
+      busqueda: '',
+      cargando: true,
+
+      get filtered() {
+        var self = this;
+        if (!this.busqueda) return this.items;
+        var q = this.busqueda.toLowerCase();
+        return this.items.filter(function (m) {
+          return (m.nombre && m.nombre.toLowerCase().indexOf(q) !== -1) ||
+                 (m.presentacion && m.presentacion.toLowerCase().indexOf(q) !== -1) ||
+                 (m.laboratorio && m.laboratorio.toLowerCase().indexOf(q) !== -1);
+        });
+      },
+
+      init: function () {
+        var self = this;
+        this.cargando = true;
+        db.medicamentos.orderBy('nombre').toArray().then(function (data) {
+          self.items = data;
+          self.cargando = false;
+        });
+        mod.cargarDatos = function () {
+          db.medicamentos.orderBy('nombre').toArray().then(function (data) {
+            self.items = data;
+          });
+        };
+      },
+
+      abrirForm: function (item) {
+        mod.abrirForm(item);
+      },
+
+      eliminar: function (item) {
+        mod.eliminar(item);
+      }
+    };
+  }
+</script>
